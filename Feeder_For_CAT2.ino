@@ -4,7 +4,7 @@
 
 TODO 
 
-+ не работает BlueTooth перепутал Rx и Tx :) при установке перемычек
+- не работает BlueTooth перепутал Rx и Tx :) при установке перемычек
 - есть косяки и лишние места по плате тож надо переделать  (например DC/DC модуль кверху пузом)
 - реализовать прошивку контроллера ч/з блютуз - ????? 
 -- выправить руки при напайке SMD компонетов (опционально) 
@@ -12,8 +12,6 @@ TODO
 -- допилить логирование событий
 - заменить НС-06 на ЕSР8266 для интеграции в "вумныЙ Дом"
 --- проц не стартует без подключенных RTC 
-
-угол подправлен на 110 с возвратом в 0
 */
 
 
@@ -22,25 +20,52 @@ TODO
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+#include <avr/pgmspace.h>
 #include <DS3231.h>   
 
 
-
+#define DEBUG
 
 
 uint8_t count_To_EAT = 0, noEAT = 0, firstStart = 1;
 uint8_t hours = 0, mins = 0, secs = 0, months = 0, days = 0, day_of_wek = 0;
 uint8_t l_hours = 0, l_mins = 0, l_secs = 0; // переменные для "локального" времени 
 uint16_t years = 0, t1= 0, t2 = 0;
-uint8_t count = 0;
+uint8_t count = 0, FstTime = 06, ScdTime = 0x09, ThdTime = 11;
 uint16_t val = 0; 
-uint8_t Angle = 110;
-uint8_t DeviderToEat = 1; // значение кратному времени кормежки
+
+// настройки 
+volatile uint8_t Angle = 110; // угол
+volatile uint8_t EatSkipNumber = 4; // номер кормления для пропуска
+volatile uint8_t DeviderToEat = 1; // значение кратному времени кормежки
+volatile uint16_t BOUDRATE = 9600;
+
+volatile uint8_t FstTimeH = 40, FstTimeM = 0,  ScdTimeH = 45, ScdTimeM = 0, ThdTimeH = 50, ThdTimeM = 0;
+
+
+int address = 1;
+byte value;
+
 
 
 Servo servo;
 
 char b[9];              //буфер для получения данных из COM порта
+
+void PrintHELP()
+{
+    //char PROGMEM  help[] = {"Privet!!! Dobro pozalovat' !! I'am Cat Feeder v 2.0 \n For control me send next: \n 1 - HELP\n  2 - Time Print \n  3 - Kormit' kota (prinuditel'no)\n 4 - SetUP for RTC\n + or - for correct the angle of turn\n Have a nice Day...\n "};
+    
+    //{" 1 - HELP\n  2 - Time Print \n  3 - Kormit' kota (prinuditel'no)\n 4 - SetUP for RTC \n"}; 
+    Serial.println(F("1 - HELP"));
+    Serial.println(F("2 - Time Print"));
+    Serial.println(F("3 - Kormit' kota"));
+    Serial.println(F("4 - Setup for RTC"));
+    Serial.println(F("5 - Setup for Time for Eat"));
+  
+  
+    delay(5000);
+}
 
 void Flush()
 {  
@@ -52,9 +77,85 @@ void Flush()
     }
 }
 
+void SetUP()
+{
+  Flush();// чистим массив
+  count = 0;
+
+  Serial.println(F("Current setting is:  "));
+  Serial.print(F("Angle of turn: "));
+  Serial.println(Angle);
+  Serial.print(F("EatSkipNumber: "));
+  Serial.println(EatSkipNumber);
+  Serial.print(F("DeviderToEat: "));
+  Serial.println(DeviderToEat);
+  Serial.println(F("Enter a new settings: (example: 1100006)"));
+  
+  
+  while(count!=7)
+  {
+    if (Serial.available()) // проверяем, поступают ли какие-то команды
+    {
+   
+        b[count] = Serial.read();
+        //костыль!
+        if(b[count]>48) {b[count] = b[count]-48;}
+        if(b[count]==48) {b[count] = 0;}
+
+        count++;
+    }
+  }
+  count = 0;
+  
+  
+  t1 = ((b[0]*100) + (b[1]*10) + b[2]);
+  b[0] = t1;
+  
+  count = 3;
+  while(count!=7)
+  {
+    
+    t1 = uint8_t(b[count]*10);
+    t1 = (t1<<4);
+    t2 = uint8_t(b[count+1]);
+    t2 = (t2<<4);
+    t1 = (t1+t2)>>4;
+    b[count]= t1;
+  //  Serial.println(t1);
+    count =count +2;
+//    delay(1700);
+
+    
+    
+  }
+  count = 0;
+  Angle = b[0];
+  EatSkipNumber = b[3];
+  DeviderToEat = b[5];
+  Serial.println(F("New setting is: "));
+  Serial.print(F("Angle of turn: "));
+  Serial.println(Angle);
+  Serial.print(F("EatSkipNumber: "));
+  Serial.println(EatSkipNumber);
+  Serial.print(F("DeviderToEat: "));
+  Serial.println(DeviderToEat);
+  Serial.println(F(" Have a nice Day..."));
+  //StoreSettings();
+}
+
 
 
 DS3231  rtc(SDA, SCL);                 // Инициализация DS3231// SDA - A4 SCL - A5
+
+Time t;
+/*********************************************************************************/
+int freeRam () {
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+/*********************************************************************************/
+
 
 
 uint16_t Time_Set()
@@ -96,7 +197,7 @@ void DateSet()
   t1 = 0;
   t2 = 0;
   count = 0;
-  Serial.println("Enter the date and day of week: (dDDMMYYYY)");
+  Serial.println(F("Enter the date and day of week: (dDDMMYYYY)"));
   while(count!=9)
   {
     if (Serial.available()) // проверяем, поступают ли какие-то команды
@@ -148,17 +249,17 @@ void DateSet()
 void DS3231Control()
 {
  
-  Serial.println("Enter a Hour: ");
+  Serial.println(F("Enter a Hour: "));
     hours = Time_Set();
-    Serial.println("Enter a Min: ");
+    Serial.println(F("Enter a Min: "));
     mins = Time_Set();
-    Serial.println("Enter a Sec: ");
+    Serial.println(F("Enter a Sec: "));
     secs = Time_Set();
-    Serial.print("Time is: ");
+    Serial.print(F("Time is: "));
     Serial.print(hours);
-    Serial.print(":");
+    Serial.print(F(":"));
     Serial.print(mins);
-    Serial.print(":");
+    Serial.print(F(":"));
     Serial.println(secs);
              
     rtc.setTime(hours, mins, secs);              //  Установить время 16:29:00 (формат 24 часа)
@@ -170,13 +271,48 @@ void DS3231Control()
 
 }
 
+
+void EATControl()
+{
+ 
+  Serial.println(F("Enter a First Hour: "));
+    FstTimeH = Time_Set();
+    Serial.println(F("Enter a First Min: "));
+    FstTimeM = Time_Set();
+  
+    Serial.println(F("Enter a Second Hour: "));
+    ScdTimeH = Time_Set();
+    Serial.println(F("Enter a Second Min: "));
+    ScdTimeM = Time_Set();
+
+    Serial.println(F("Enter a Third Hour: "));
+    ThdTimeH = Time_Set();
+    Serial.println(F("Enter a Third Min: "));
+    ThdTimeM = Time_Set();             
+ 
+   
+    Serial.println(F("New Settings is:"));
+    Serial.print(FstTimeH);
+    Serial.print(":");
+    Serial.println(FstTimeM);
+    
+    Serial.print(ScdTimeH);
+    Serial.print(":");
+    Serial.println(ScdTimeM);
+    
+    Serial.print(ThdTimeH);
+    Serial.print(":");
+    Serial.println(ThdTimeM);
+}
+
+
 void TimePrint()
 {
   Serial.print(rtc.getDOWStr());       // Отправляем день-неделя
-  Serial.print(" ");
+  Serial.print(F(" "));
   
   Serial.print(rtc.getDateStr());      // Отправляем дату
-  Serial.print(" -- ");
+  Serial.print(F(" -- "));
 
   Serial.println(rtc.getTimeStr());    // Отправляем время
 
@@ -240,27 +376,6 @@ void TimeForEAT()
    servo.detach();       //устанавливаем пин как вывод управления сервой
 }
 
-
-void BoomBang()
-{
-  servo.attach(9);       //устанавливаем пин как вывод управления сервой
-  digitalWrite(7, HIGH);
-  servo.write(180);              // tell servo to go to position in variable 'pos' 
-  delay(150);                       // waits 15ms for the servo to reach the position 
-  servo.write(120);              // tell servo to go to position in variable 'pos' 
-  delay(150);     
-  servo.write(180);              // tell servo to go to position in variable 'pos' 
-  delay(150);
-  delay(150);                       // waits 15ms for the servo to reach the position 
-  servo.write(120);              // tell servo to go to position in variable 'pos' 
-  delay(150);     
-  servo.write(180);              // tell servo to go to position in variable 'pos' 
-  delay(150);
-digitalWrite(7, LOW);  
- servo.detach();       //устанавливаем пин как вывод управления сервой
-}
-
-
 void loop() {
 
 
@@ -270,22 +385,47 @@ void loop() {
 
     val = Serial.read(); // переменная val равна полученной команде
 
-    if (val == '1') { TimePrint(); } 
-    if (val == '2') { TimePrint(); TimeForEAT(); Serial.println("Time To EAT");} 
-    if (val == '3') { DS3231Control(); }
-//    if (val == '4') { LogRead();}
-    if (val == '+') {Angle = Angle + 2;}
-    if (val == '-') {Angle =- 2;}
+    if (val == '1') {PrintHELP();} 
+    if (val == '2') { TimePrint(); } 
+    if (val == '3') { TimePrint(); TimeForEAT(); Serial.println(F("Time To EAT"));} 
+    if (val == '4') { DS3231Control(); }
+    if (val == '5') { EATControl();}
+    
     
   }
-  if(firstStart) { TimePrint(); count_To_EAT++; TimeForEAT(); Serial.println("Time To EAT"); firstStart = 0; }
+  if(firstStart) {Serial.println(F("Privet! \n Dovai kormit' kota? \n For HELP send me 1...\n")); Serial.println(freeRam());  TimePrint(); count_To_EAT++; TimeForEAT(); Serial.println(F("Time To EAT")); firstStart = 0; Serial.println(count_To_EAT);}
 //  if((((l_hours+1)%DeviderToEat)==0)&&(l_mins==0)&&(l_secs==0)) 
-  if((((l_mins+1)%DeviderToEat)==0)&&(l_secs==0)) 
+ // if((((l_mins+1)%DeviderToEat)==0)&&(l_secs==0)) 
+  
+  t = rtc.getTime();
+
+#ifdef DEBUG
+  if((t.min==FstTimeH)&&(t.sec == FstTimeM)) {noEAT=0;}
+  if((t.min==ScdTimeH)&&(t.sec == ScdTimeM)) {noEAT=0;}
+  if((t.min==ThdTimeH)&&(t.sec == ThdTimeM)) {noEAT=0;}
+#endif
+
+#ifndef DEBUG  
+  if((t.hour==FstTimeH)&&(t.min == FstTimeM)) {noEAT=0;}
+  if((t.hour==ScdTimeH)&&(t.min == ScdTimeM)) {noEAT=0;}
+  if((t.hour==ThdTimeH)&&(t.min == ThdTimeM)) {noEAT=0;}
+#endif
+
+  else {noEAT = 1;}  
+  if(noEAT==0) { TimeForEAT(); Serial.println(F("Time To EAT")); }
+   
+  /*if((((t.min+1)%DeviderToEat)==0)&&(t.sec==0)) 
   {
     TimePrint();
-    if(noEAT==0) { TimeForEAT(); Serial.println("Time To EAT");}
+    
+    if((count_To_EAT+1)==EatSkipNumber) {noEAT=1;}// если номер кормления совпал с номером который надо пропустить
+    else {noEAT = 0;}
+    
+    if(noEAT==0) { TimeForEAT(); Serial.println("Time To EAT"); Serial.println(count_To_EAT);}
     else {Serial.println("No EAT");}
     count_To_EAT++;
+    if(count_To_EAT == 5) {count_To_EAT =0;}
+    
  //   if(count_To_EAT==2) {BoomBang();}
   //  if(count_To_EAT==3) {noEAT=1;}
    // if(count_To_EAT==4) {BoomBang();}
@@ -295,7 +435,7 @@ void loop() {
 
   }
 
-
+*/
 
 
 }
@@ -316,4 +456,5 @@ ISR (INT0_vect)
         }
     }  
 }
+
 
