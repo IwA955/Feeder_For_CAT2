@@ -34,7 +34,7 @@ uint8_t count = 0, FstTime = 06, ScdTime = 0x09, ThdTime = 11;
 uint16_t val = 0; 
 
 // настройки 
-volatile uint8_t Angle = 110; // угол
+volatile uint8_t Angle = 170; // угол
 //volatile uint8_t EatSkipNumber = 4; // номер кормления для пропуска
 //volatile uint8_t DeviderToEat = 1; // значение кратному времени кормежки
 volatile uint16_t BOUDRATE = 9600;
