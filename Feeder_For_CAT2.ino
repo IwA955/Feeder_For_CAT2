@@ -32,18 +32,19 @@ uint8_t l_hours = 0, l_mins = 0, l_secs = 0; // переменные для "л�
 uint16_t years = 0, t1= 0, t2 = 0;
 uint8_t count = 0, FstTime = 06, ScdTime = 0x09, ThdTime = 11;
 uint16_t val = 0; 
+uint16_t deb_val = 0; 
 
 // настройки 
-volatile uint8_t Angle = 170; // угол
+volatile uint8_t Angle = 150; // угол
 //volatile uint8_t EatSkipNumber = 4; // номер кормления для пропуска
 //volatile uint8_t DeviderToEat = 1; // значение кратному времени кормежки
 volatile uint16_t BOUDRATE = 9600;
 
-volatile uint8_t FstTimeH = 07, FstTimeM = 0,  ScdTimeH = 12, ScdTimeM = 0, ThdTimeH = 18, ThdTimeM = 0;
+volatile uint8_t FstTimeH = 08, FstTimeM = 0,  ScdTimeH = 12, ScdTimeM = 0, ThdTimeH = 19, ThdTimeM = 0;
 
 
 int address = 1;
-byte value;
+byte value = 0;
 
 
 
@@ -168,6 +169,8 @@ void PrintHELP()
     Serial.println(F("4 - Setup for RTC"));
     Serial.println(F("5 - Setup for Time for Eat"));
     Serial.println(F("6 - Print All Current settings"));
+    Serial.println(F("!!! DEBUG MODE !!!"));
+    Serial.println(F("7 - AngleCorrect\n 8 - freeRam\n 9 - EEPROM clear"));
   
   
     delay(5000);
@@ -183,7 +186,7 @@ void Flush()
     }
 }
 
-void SetUP()
+void AngleCorrect()
 {
   Flush();// чистим массив
   count = 0;
@@ -197,10 +200,10 @@ void SetUP()
   Serial.print(F("DeviderToEat: "));
   Serial.println(DeviderToEat);
   */
-  Serial.println(F("Enter a new settings: (example: 110)"));
+  Serial.println(F("Enter a new settings: (example: 110 or 030)"));
   
   
-  while(count!=7)
+  while(count!=3)
   {
     if (Serial.available()) // проверяем, поступают ли какие-то команды
     {
@@ -218,7 +221,7 @@ void SetUP()
   
   t1 = ((b[0]*100) + (b[1]*10) + b[2]);
   b[0] = t1;
-  
+/*
   count = 3;
   while(count!=7)
   {
@@ -232,10 +235,7 @@ void SetUP()
   //  Serial.println(t1);
     count =count +2;
 //    delay(1700);
-
-    
-    
-  }
+  } */
   count = 0;
   Angle = b[0];
   
@@ -252,7 +252,7 @@ void SetUP()
   Serial.println(DeviderToEat);
   */
   Serial.println(F(" Have a nice Day..."));
-  //StoreSettings();
+  StoreSettings();
 }
 
 
@@ -262,7 +262,8 @@ DS3231  rtc(SDA, SCL);                 // Инициализация DS3231// SD
 Time t;
 /*********************************************************************************/
 
-/*int freeRam () {
+int freeRam () 
+{
   extern int __heap_start, *__brkval; 
   int v; 
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
@@ -449,11 +450,11 @@ void setup()
  ADMUX |=1<<MUX0;
 */ 
 
-  rtc.setOutput(0);
-  pinMode(2, INPUT);
+ // rtc.setOutput(0);
+ // pinMode(2, INPUT);
 
-  EICRA |= 1<<ISC01|1<<ISC00;
-  EIMSK |= 1<<INT0;
+//  EICRA |= 1<<ISC01|1<<ISC00;
+//  EIMSK |= 1<<INT0;
 //  sei();
   
  // delay(5000); // пауза для зарядки конденсатора по питанию
@@ -494,6 +495,18 @@ void TimeForEAT()
    servo.detach();       //устанавливаем пин как вывод управления сервой
 }
 
+
+void EEPROM_Clear()
+{
+ 
+  for (uint8_t i = 0; i< 12; i++)  {Serial.println(EEPROM.read(i)); delay(500);}
+  for (uint8_t i = 0; i < 12; i++) {EEPROM.write(i, 0);} // трем предыдущие значения
+  for (uint8_t i = 0; i< 12; i++)  {Serial.println(EEPROM.read(i)); delay(500);}
+  
+}
+
+
+
 void loop() {
 
 
@@ -509,6 +522,10 @@ void loop() {
     if (val == '4') { DS3231Control(); }
     if (val == '5') { EATControl();}
     if (val == '6') {PrintAllCurrentSettings();}
+    // режим отладки реализован следующим:
+    if (val == '7') {AngleCorrect();} 
+    if (val == '8') { Serial.println(freeRam()); } 
+    if (val == '9') {EEPROM_Clear();} 
     
     
   }
@@ -544,7 +561,7 @@ void loop() {
 
 }
 
-
+/*
 ISR (INT0_vect)
 {
     l_secs++;
@@ -560,5 +577,5 @@ ISR (INT0_vect)
         }
     }  
 }
-
+*/
 
