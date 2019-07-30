@@ -40,7 +40,7 @@ volatile uint8_t Angle = 150; // угол
 //volatile uint8_t DeviderToEat = 1; // значение кратному времени кормежки
 volatile uint16_t BOUDRATE = 9600;
 
-volatile uint8_t FstTimeH = 08, FstTimeM = 0,  ScdTimeH = 12, ScdTimeM = 0, ThdTimeH = 19, ThdTimeM = 0;
+volatile uint8_t FstTimeH = 07, FstTimeM = 30,  ScdTimeH = 12, ScdTimeM = 0, ThdTimeH = 19, ThdTimeM = 0;
 
 
 int address = 1;
@@ -433,6 +433,18 @@ void TimePrint()
 
 }
 
+void BattCheck(void)
+{
+  if(ACSR&(1<<ACO))
+  {
+    PORTD |= 1<<5;
+  }
+  else
+  {
+    PORTD &= ~(1<<5);
+  }
+}
+
 void setup() 
 {
 
@@ -442,6 +454,10 @@ void setup()
  delay(8000); 
  if((EEPROM.read(0))==254) {RestoreSettings();}
  else{ Serial.println(F("Start 0...")); Start0();}
+ 
+ DDRD |=1<<5 ;
+
+ ACSR |= (1<<ACBG)|(1<<ACIE)|(1<<ACIS1)|(1<<ACIS0);
  
  /*
  ACSR |= 1<<ACBG|1<<ACIS1|1<<ACIE;
@@ -510,7 +526,9 @@ void EEPROM_Clear()
 void loop() {
 
 
-
+  BattCheck();
+  _delay_ms(50);
+  
   if (Serial.available()) // проверяем, поступают ли какие-то команды
   {
 
