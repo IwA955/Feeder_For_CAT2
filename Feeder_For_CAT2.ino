@@ -17,6 +17,7 @@ TODO
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
+#include <avr/sleep.h>
 #include <avr/pgmspace.h>
 #include <DS3231.h>   
 
@@ -40,7 +41,7 @@ volatile uint8_t Angle = 150; // угол
 //volatile uint8_t DeviderToEat = 1; // значение кратному времени кормежки
 volatile uint16_t BOUDRATE = 9600;
 
-volatile uint8_t FstTimeH = 07, FstTimeM = 30,  ScdTimeH = 12, ScdTimeM = 0, ThdTimeH = 19, ThdTimeM = 0;
+volatile uint8_t FstTimeH = 07, FstTimeM = 30,  ScdTimeH = 12, ScdTimeM = 0, ThdTimeH = 18, ThdTimeM = 30;
 
 
 int address = 1;
@@ -96,17 +97,17 @@ void RestoreSettings()
   Serial.print("DeviderToEat: ");
   Serial.println(DeviderToEat);
   */
-  while(address!=7)
+  while(address!=8)
   {
     // считываем значение по текущему адресу EEPROM
     value = EEPROM.read(address);
     b1[address] = value;
- /*
+/*
     Serial.print(address);
     Serial.print("\t");
     Serial.print(value, DEC);
     Serial.println();
-   */ 
+*/    
     // устанавливаем следующую ячейку памяти
     address = address + 1;
     
@@ -433,64 +434,55 @@ void TimePrint()
 
 }
 
-void BattCheck(void)
-{
-  if(ACSR&(1<<ACO))
-  {
-    PORTD |= 1<<5;
-  }
-  else
-  {
-    PORTD &= ~(1<<5);
-  }
-}
+
+
 
 void setup() 
 {
 
  Serial.begin(BOUDRATE); 
  rtc.begin(); 
+
+
+// настройка для прерываний от часов
+ // rtc.setOutput(0);
+  pinMode(2, INPUT);
+  
+  EICRA |= 1<<ISC01|1<<ISC00; // The falling edge of INT0 generates an interrupt request. 
+  EIMSK  |= 1<<INT0; //External Interrupt Request 0 Enable
+  SMCR |=0<<SM2|1<<SM1|0<<SM0; // Power-down mode
+   
+
+
+
+
  
  delay(8000); 
  if((EEPROM.read(0))==254) {RestoreSettings();}
  else{ Serial.println(F("Start 0...")); Start0();}
- 
- DDRD |=1<<5 ;
 
- ACSR |= (1<<ACBG)|(1<<ACIE)|(1<<ACIS1)|(1<<ACIS0);
- 
- /*
- ACSR |= 1<<ACBG|1<<ACIS1|1<<ACIE;
- ADCSRB |= 1<<ACME|1<<ADTS0;
- ADCSRA  &~(1<<ADEN);
- ADMUX |=1<<MUX0;
-*/ 
-
- // rtc.setOutput(0);
- // pinMode(2, INPUT);
-
-//  EICRA |= 1<<ISC01|1<<ISC00;
-//  EIMSK |= 1<<INT0;
-//  sei();
-  
- // delay(5000); // пауза для зарядки конденсатора по питанию
-//  ADC_Init();
+  Serial.println(freeRam());
   pinMode(7, OUTPUT);    //питание сервопривода
   pinMode(6, OUTPUT);    //управление сервиком
-  pinMode(5, OUTPUT);    //светодиод на уровень АКБ
-  digitalWrite(5, HIGH); // высокий пока норм заряд АКБ
-  
-  servo.attach(9);       //устанавливаем пин как вывод управления сервой
 
+  servo.attach(9);       //устанавливаем пин как вывод управления сервой
 
   // ставим серву в 0
   digitalWrite(7, HIGH);
  
 //  delay(150);//время на открытие транзистора
   servo.write(0);    //поворачиваем сервопривод чтобы кормушка закрылась   
-  delay(1500);          //задержка чтобы сервопривод успел повернуться на нужный угол
+  delay(250);          //задержка чтобы сервопривод успел повернуться на нужный угол
   digitalWrite(7, LOW);
-  servo.detach();       
+  servo.detach();      
+ //  ADCSRA = 0;
+ DDRC = 0;
+ PORTC = 0xCF;
+ PORTD = 0x78;
+ PORTB = 0x7E;
+ 
+
+ 
  
 }
 
@@ -524,10 +516,6 @@ void EEPROM_Clear()
 
 
 void loop() {
-
-
-  BattCheck();
-  _delay_ms(50);
   
   if (Serial.available()) // проверяем, поступают ли какие-то команды
   {
@@ -551,15 +539,22 @@ void loop() {
   {
       Serial.println(F("Privet! \n Dovai kormit' kota? \n For HELP send me 1...\n")); 
      // Serial.println(freeRam());  
-      TimePrint(); 
+   //   TimePrint(); 
       count_To_EAT++; 
-      TimeForEAT(); 
+   //   TimeForEAT(); 
       Serial.println(F("Time To EAT")); 
       firstStart = 0; 
       noEAT = 1;
+      delay(2000);
+       //  sei();
+      Serial.println(F("Going to Sleep..."));
+      delay(1000);
+      SMCR |=1<<SE; // Enable sleeping
+      asm("sleep"); // going to sleep
   }
  
-  
+
+/*
   t = rtc.getTime();
   if((t.hour==FstTimeH)&&(t.min==FstTimeM)&&(t.sec==0)) {noEAT=0;}
   else 
@@ -575,14 +570,22 @@ void loop() {
   
    if(noEAT==0) { TimePrint(); TimeForEAT(); Serial.println(F("Time To EAT")); noEAT = 1; }
    
-
+*/
+     Serial.println(F("Going to Sleep..."));
+     delay(3000);
+      SMCR |=1<<SE; // Enable sleeping
+      asm("sleep"); // going to sleep
 
 }
 
-/*
+
+
 ISR (INT0_vect)
 {
-    l_secs++;
+  if((SMCR&1<<SE)) 
+  SMCR &=~(1<<SE); // Disable sleeping
+  Serial.println(F("WakeUP!"));
+/*  l_secs++;
     if(l_secs==59) 
     {
         l_secs = 0; 
@@ -593,7 +596,7 @@ ISR (INT0_vect)
           l_hours ++;
           if(l_hours==23) {l_hours=0;}
         }
-    }  
+    }  */
 }
-*/
+
 
