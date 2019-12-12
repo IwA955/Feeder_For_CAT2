@@ -31,7 +31,7 @@ uint8_t count_To_EAT = 0, noEAT = 0, firstStart = 1;
 uint8_t hours = 0, mins = 0, secs = 0, months = 0, days = 0, day_of_wek = 0;
 uint8_t l_hours = 0, l_mins = 0, l_secs = 0; // переменные для "локального" времени 
 uint16_t years = 0, t1= 0, t2 = 0;
-uint8_t count = 0, FstTime = 06, ScdTime = 0x09, ThdTime = 11;
+uint8_t count = 0, FstTime = 06, ScdTime = 0x09, ThdTime = 11, GOTOSleep = 0, GOTOSleep1 = 0;
 uint16_t val = 0; 
 uint16_t deb_val = 0; 
 
@@ -171,7 +171,7 @@ void PrintHELP()
     Serial.println(F("5 - Setup for Time for Eat"));
     Serial.println(F("6 - Print All Current settings"));
     Serial.println(F("!!! DEBUG MODE !!!"));
-    Serial.println(F("7 - AngleCorrect\n 8 - freeRam\n 9 - EEPROM clear"));
+    Serial.println(F("7 - AngleCorrect\n 8 - freeRam\n 9 - EEPROM clear\n 0 - SleepControl\n 10 - SleepENA"));
   
   
     delay(5000);
@@ -451,12 +451,7 @@ void setup()
   EICRA |= 1<<ISC01|1<<ISC00; // The falling edge of INT0 generates an interrupt request. 
   EIMSK  |= 1<<INT0; //External Interrupt Request 0 Enable
   SMCR |=0<<SM2|1<<SM1|0<<SM0; // Power-down mode
-   
-
-
-
-
- 
+  
  delay(8000); 
  if((EEPROM.read(0))==254) {RestoreSettings();}
  else{ Serial.println(F("Start 0...")); Start0();}
@@ -475,14 +470,13 @@ void setup()
   delay(250);          //задержка чтобы сервопривод успел повернуться на нужный угол
   digitalWrite(7, LOW);
   servo.detach();      
+  
+//жэкономия электро энергии
  //  ADCSRA = 0;
  DDRC = 0;
  PORTC = 0xCF;
  PORTD = 0x78;
  PORTB = 0x7E;
- 
-
- 
  
 }
 
@@ -515,6 +509,33 @@ void EEPROM_Clear()
 
 
 
+
+void SleepControl()
+{
+
+ //   if(GOTOSleep)
+  //  {
+        sei();
+        GOTOSleep = 1;
+        Serial.println(F("Sleep 0"));
+        GOTOSleep = 1;
+        delay(3000);
+        SMCR |=1<<SE; // Enable sleeping
+        asm("sleep"); // going to sleep
+        
+
+  /*  }
+    else
+    {
+      if((SMCR&1<<SE)) 
+      SMCR &=~(1<<SE); // Disable sleeping
+    }
+*/
+    
+}
+
+
+
 void loop() {
   
   if (Serial.available()) // проверяем, поступают ли какие-то команды
@@ -532,7 +553,7 @@ void loop() {
     if (val == '7') {AngleCorrect();} 
     if (val == '8') { Serial.println(freeRam()); } 
     if (val == '9') {EEPROM_Clear();} 
-    
+    if (val == '0')  {SleepControl();}
     
   }
   if(firstStart) 
@@ -545,13 +566,18 @@ void loop() {
       Serial.println(F("Time To EAT")); 
       firstStart = 0; 
       noEAT = 1;
-      delay(2000);
-       //  sei();
-      Serial.println(F("Going to Sleep..."));
-      delay(1000);
+
+  /*    
+   */
+  }
+  if(GOTOSleep)
+  {
+      Serial.println(F("Sleep 1"));
+      delay(3000);
       SMCR |=1<<SE; // Enable sleeping
       asm("sleep"); // going to sleep
   }
+
  
 
 /*
@@ -571,32 +597,32 @@ void loop() {
    if(noEAT==0) { TimePrint(); TimeForEAT(); Serial.println(F("Time To EAT")); noEAT = 1; }
    
 */
-     Serial.println(F("Going to Sleep..."));
-     delay(3000);
-      SMCR |=1<<SE; // Enable sleeping
-      asm("sleep"); // going to sleep
-
 }
 
 
 
 ISR (INT0_vect)
 {
-  if((SMCR&1<<SE)) 
-  SMCR &=~(1<<SE); // Disable sleeping
-  Serial.println(F("WakeUP!"));
-/*  l_secs++;
-    if(l_secs==59) 
-    {
-        l_secs = 0; 
-        l_mins++;
-        if(l_mins==59)
-        {
-          l_mins =0;
-          l_hours ++;
-          if(l_hours==23) {l_hours=0;}
-        }
-    }  */
+ 
+    if((SMCR&1<<SE)) 
+    { 
+      SMCR &=~(1<<SE); // Disable sleeping
+      Serial.println(F("WakeUP!"));
+    }
+  /*  l_secs++;
+      if(l_secs==59) 
+      {
+          l_secs = 0; 
+          l_mins++;
+          if(l_mins==59)
+          {
+            l_mins =0;
+            l_hours ++;
+            if(l_hours==23) {l_hours=0;}
+          }
+      }  */
+
 }
+
 
 
